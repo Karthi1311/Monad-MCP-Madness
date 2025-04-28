@@ -1,0 +1,30 @@
+{
+  "name": "mcp-server",
+  "version": "0.6.9",
+  "main": "index.js",
+  "scripts": {
+    "build": "tsc",
+    "setup": "npm install && npm run configure && tsc",
+    "start": "node ./build/index.js",
+    "dev": "npm run setup && npm run start",
+    "configure": "node scripts/configure-mcp.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "devDependencies": {
+    "@openzeppelin/contracts": "^5.3.0",
+    "@types/node": "^22.15.2",
+    "clipboardy": "^4.0.0",
+    "solc": "^0.8.29",
+    "types-solc": "^1.0.1",
+    "typescript": "^5.8.3"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.10.2",
+    "axios": "^1.9.0",
+    "viem": "^2.28.0",
+    "zod": "^3.24.3"
+  }
+}
