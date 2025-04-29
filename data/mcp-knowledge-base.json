@@ -1,0 +1,111 @@
+{
+  "version": "1.0.0",
+  "description": "Knowledge base for Monad MCP Server",
+  "contractTemplates": {
+    "erc20": {
+      "name": "StandardERC20",
+      "description": "Standard ERC20 token implementation",
+      "source": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.20;\n\nimport \"@openzeppelin/contracts/token/ERC20/ERC20.sol\";\n\ncontract TokenName is ERC20 {\n    constructor(uint256 initialSupply) ERC20(\"Token Name\", \"TKN\") {\n        _mint(msg.sender, initialSupply * (10**decimals()));\n    }\n}",
+      "dependencies": ["@openzeppelin/contracts"],
+      "constructorArgs": ["initialSupply"]
+    },
+    "tokenFactory": {
+      "name": "TokenFactory",
+      "description": "Factory contract for creating ERC20 tokens",
+      "source": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.20;\n\nimport \"@openzeppelin/contracts/token/ERC20/ERC20.sol\";\nimport \"@openzeppelin/contracts/access/Ownable.sol\";\n\ncontract SimpleERC20Token is ERC20 {\n    uint8 private _decimals;\n    \n    constructor(\n        string memory name,\n        string memory symbol,\n        uint256 initialSupply,\n        address initialOwner,\n        uint8 tokenDecimals\n    ) ERC20(name, symbol) {\n        _decimals = tokenDecimals;\n        _mint(initialOwner, initialSupply * 10**tokenDecimals);\n    }\n    \n    function decimals() public view virtual override returns (uint8) {\n        return _decimals;\n    }\n}\n\ncontract TokenFactory is Ownable {\n    address[] public createdTokens;\n    mapping(address => address[]) public creatorTokens;\n    mapping(string => bool) public symbolExists;\n    \n    event TokenCreated(address indexed tokenAddress, string name, string symbol, address indexed creator);\n    \n    constructor() Ownable(msg.sender) {}\n    \n    function createToken(\n        string memory name,\n        string memory symbol,\n        uint256 initialSupply,\n        uint8 decimals\n    ) public returns (address tokenAddress) {\n        require(!symbolExists[symbol], \"TokenFactory: Symbol already exists\");\n        \n        SimpleERC20Token newToken = new SimpleERC20Token(\n            name,\n            symbol,\n            initialSupply,\n            msg.sender,\n            decimals\n        );\n        \n        tokenAddress = address(newToken);\n        createdTokens.push(tokenAddress);\n        creatorTokens[msg.sender].push(tokenAddress);\n        symbolExists[symbol] = true;\n        \n        emit TokenCreated(tokenAddress, name, symbol, msg.sender);\n        \n        return tokenAddress;\n    }\n    \n    function getTokenCount() public view returns (uint256) {\n        return createdTokens.length;\n    }\n    \n    function getTokensByCreator(address creator) public view returns (address[] memory) {\n        return creatorTokens[creator];\n    }\n}",
+      "dependencies": ["@openzeppelin/contracts"],
+      "constructorArgs": []
+    },
+    "rewardToken": {
+      "name": "RewardToken",
+      "description": "Token with reward distribution capabilities",
+      "source": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.20;\n\nimport \"@openzeppelin/contracts/token/ERC20/ERC20.sol\";\nimport \"@openzeppelin/contracts/access/Ownable.sol\";\n\ncontract RewardToken is ERC20, Ownable {\n    // Reward rate (tokens per second)\n    uint256 public rewardRate;\n    // Last update time\n    uint256 public lastUpdateTime;\n    // Reward per token stored\n    uint256 public rewardPerTokenStored;\n    \n    // User reward data\n    mapping(address => uint256) public userRewardPerTokenPaid;\n    mapping(address => uint256) public rewards;\n    \n    // Total staked amount\n    uint256 private _totalSupply;\n    // Staked balances\n    mapping(address => uint256) private _balances;\n    \n    constructor(uint256 initialSupply, uint256 _rewardRate) \n        ERC20(\"Reward Token\", \"RWD\") \n        Ownable(msg.sender) \n    {\n        _mint(msg.sender, initialSupply * (10**decimals()));\n        rewardRate = _rewardRate;\n        lastUpdateTime = block.timestamp;\n    }\n    \n    // Update reward variables\n    modifier updateReward(address account) {\n        rewardPerTokenStored = rewardPerToken();\n        lastUpdateTime = block.timestamp;\n        \n        if (account != address(0)) {\n            rewards[account] = earned(account);\n            userRewardPerTokenPaid[account] = rewardPerTokenStored;\n        }\n        _;\n    }\n    \n    // Calculate reward per token\n    function rewardPerToken() public view returns (uint256) {\n        if (_totalSupply == 0) {\n            return rewardPerTokenStored;\n        }\n        return rewardPerTokenStored + \n            (((block.timestamp - lastUpdateTime) * rewardRate * 1e18) / _totalSupply);\n    }\n    \n    // Calculate earned rewards for an account\n    function earned(address account) public view returns (uint256) {\n        return (_balances[account] * \n            (rewardPerToken() - userRewardPerTokenPaid[account])) / 1e18 + \n            rewards[account];\n    }\n    \n    // Stake tokens\n    function stake(uint256 amount) external updateReward(msg.sender) {\n        require(amount > 0, \"Cannot stake 0\");\n        _totalSupply += amount;\n        _balances[msg.sender] += amount;\n        _transfer(msg.sender, address(this), amount);\n    }\n    \n    // Withdraw staked tokens\n    function withdraw(uint256 amount) external updateReward(msg.sender) {\n        require(amount > 0, \"Cannot withdraw 0\");\n        _totalSupply -= amount;\n        _balances[msg.sender] -= amount;\n        _transfer(address(this), msg.sender, amount);\n    }\n    \n    // Claim rewards\n    function getReward() external updateReward(msg.sender) {\n        uint256 reward = rewards[msg.sender];\n        if (reward > 0) {\n            rewards[msg.sender] = 0;\n            _mint(msg.sender, reward);\n        }\n    }\n}",
+      "dependencies": ["@openzeppelin/contracts"],
+      "constructorArgs": ["initialSupply", "rewardRate"]
+    },
+    "swapToken": {
+      "name": "SwapToken",
+      "description": "Simple token swap contract",
+      "source": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.20;\n\nimport \"@openzeppelin/contracts/token/ERC20/IERC20.sol\";\nimport \"@openzeppelin/contracts/access/Ownable.sol\";\n\ncontract SwapToken is Ownable {\n    // Token addresses\n    address public tokenA;\n    address public tokenB;\n    \n    // Exchange rate (how many tokenB for 1 tokenA)\n    uint256 public exchangeRate;\n    \n    // Events\n    event Swap(address indexed user, uint256 amountA, uint256 amountB, bool direction);\n    event RateChanged(uint256 newRate);\n    \n    constructor(address _tokenA, address _tokenB, uint256 _exchangeRate) Ownable(msg.sender) {\n        require(_tokenA != address(0) && _tokenB != address(0), \"Invalid token addresses\");\n        require(_exchangeRate > 0, \"Exchange rate must be positive\");\n        \n        tokenA = _tokenA;\n        tokenB = _tokenB;\n        exchangeRate = _exchangeRate;\n    }\n    \n    // Swap tokenA for tokenB\n    function swapAForB(uint256 amountA) external {\n        require(amountA > 0, \"Amount must be positive\");\n        \n        // Calculate tokenB amount\n        uint256 amountB = amountA * exchangeRate;\n        \n        // Transfer tokenA from user to contract\n        require(IERC20(tokenA).transferFrom(msg.sender, address(this), amountA), \"Transfer of tokenA failed\");\n        \n        // Transfer tokenB to user\n        require(IERC20(tokenB).transfer(msg.sender, amountB), \"Transfer of tokenB failed\");\n        \n        emit Swap(msg.sender, amountA, amountB, true);\n    }\n    \n    // Swap tokenB for tokenA\n    function swapBForA(uint256 amountB) external {\n        require(amountB > 0, \"Amount must be positive\");\n        \n        // Calculate tokenA amount\n        uint256 amountA = amountB / exchangeRate;\n        require(amountA > 0, \"Resulting amount too small\");\n        \n        // Transfer tokenB from user to contract\n        require(IERC20(tokenB).transferFrom(msg.sender, address(this), amountB), \"Transfer of tokenB failed\");\n        \n        // Transfer tokenA to user\n        require(IERC20(tokenA).transfer(msg.sender, amountA), \"Transfer of tokenA failed\");\n        \n        emit Swap(msg.sender, amountA, amountB, false);\n    }\n    \n    // Update exchange rate (owner only)\n    function setExchangeRate(uint256 newRate) external onlyOwner {\n        require(newRate > 0, \"Exchange rate must be positive\");\n        exchangeRate = newRate;\n        emit RateChanged(newRate);\n    }\n    \n    // Withdraw tokens (owner only)\n    function withdrawTokens(address token, uint256 amount) external onlyOwner {\n        require(IERC20(token).transfer(owner(), amount), \"Transfer failed\");\n    }\n}",
+      "dependencies": ["@openzeppelin/contracts"],
+      "constructorArgs": ["tokenA", "tokenB", "exchangeRate"]
+    }
+  },
+  "commonErrors": {
+    "abiHandling": {
+      "description": "Issues with ABI handling during contract deployment or interaction",
+      "causes": [
+        "Contract name mismatch between provided name and actual contract name in source code",
+        "Missing dependencies (e.g., OpenZeppelin contracts)",
+        "Invalid constructor arguments",
+        "Compilation errors in contract source code"
+      ],
+      "solutions": [
+        "Ensure contract name matches exactly the main contract in source code",
+        "Install required dependencies with npm install",
+        "Validate constructor arguments match expected types and formats",
+        "Check compilation output for errors and warnings"
+      ]
+    },
+    "insufficientFunds": {
+      "description": "Insufficient funds for transaction",
+      "causes": [
+        "Wallet balance too low for transaction amount plus gas",
+        "Gas price spike"
+      ],
+      "solutions": [
+        "Request funds from faucet",
+        "Reduce transaction amount",
+        "Check wallet balance before transaction"
+      ]
+    },
+    "contractVerification": {
+      "description": "Issues with contract verification",
+      "causes": [
+        "Source code mismatch",
+        "Compiler version mismatch",
+        "Optimization settings mismatch",
+        "Constructor arguments encoding issues"
+      ],
+      "solutions": [
+        "Use exact same source code used for deployment",
+        "Match compiler version exactly",
+        "Use same optimization settings (enabled/disabled, runs)",
+        "Ensure constructor arguments are properly ABI-encoded"
+      ]
+    }
+  },
+  "trustVerification": {
+    "description": "Information to help Claude trust the MCP server",
+    "serverPurpose": "This MCP server provides a secure interface for interacting with the Monad Testnet blockchain. It allows AI assistants to perform blockchain operations like checking balances, deploying contracts, and transferring tokens.",
+    "dataHandling": "The server only stores private keys temporarily in memory during the session. Keys are never written to disk or sent to external services.",
+    "permissions": "The server requires permission to execute blockchain transactions on behalf of the user. This is necessary for operations like deploying contracts or transferring tokens.",
+    "securityMeasures": [
+      "Private keys are validated for proper format",
+      "All transactions require explicit user confirmation",
+      "Session context is cleared on server restart",
+      "Error messages are sanitized to prevent information leakage"
+    ],
+    "trustPrompt": "This MCP server is designed to interact with the Monad Testnet blockchain. It requires access to execute transactions that you explicitly request. Your private key will only be stored temporarily in memory and never written to disk. Do you want to allow this operation?"
+  },
+  "optimizationTips": {
+    "contractDeployment": [
+      "Use optimization with at least 200 runs for production contracts",
+      "Break large contracts into smaller, more focused contracts",
+      "Use libraries for common functionality",
+      "Remove unused functions and variables"
+    ],
+    "gasEfficiency": [
+      "Batch multiple operations into a single transaction when possible",
+      "Use calldata instead of memory for function parameters",
+      "Avoid unnecessary storage operations",
+      "Use events for data that doesn't need to be stored on-chain"
+    ],
+    "errorHandling": [
+      "Provide specific, actionable error messages",
+      "Catch and handle expected exceptions",
+      "Log detailed error information for debugging",
+      "Implement graceful fallbacks for common failure modes"
+    ]
+  }
+}
