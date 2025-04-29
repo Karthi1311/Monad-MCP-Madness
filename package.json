@@ -10,9 +10,9 @@
     "configure": "node scripts/configure-mcp.js"
   },
   "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "description": "",
+  "author": "Karthi",
+  "license": "MIT",
+  "description": "Server implementation for the Model Context Protocol",
   "devDependencies": {
     "@openzeppelin/contracts": "^5.3.0",
     "@types/node": "^22.15.2",
